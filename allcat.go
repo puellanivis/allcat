@@ -134,7 +134,7 @@ func CatFile(ctx context.Context, filename string, opts []files.CopyOption) {
 }
 
 // FileCeption cats a list of files from a file.
-func FileCeption(ctx context.Context, filename string, opts []files.CopyOption) {
+func FileCeption(ctx context.Context, filename string) []string {
 	if glog.V(10) {
 		glog.Infof("enter FileCeption")
 	}
@@ -142,7 +142,7 @@ func FileCeption(ctx context.Context, filename string, opts []files.CopyOption) 
 	in, err := files.Open(ctx, filename)
 	if err != nil {
 		glog.Errorf("files.Open: %v", err)
-		return
+		return nil
 	}
 
 	printName := filename
@@ -163,7 +163,7 @@ func FileCeption(ctx context.Context, filename string, opts []files.CopyOption) 
 	data, err := files.ReadFrom(in)
 	if err != nil {
 		glog.Error(err)
-		return
+		return nil
 	}
 
 	lines := bytes.Split(data, []byte("\n"))
@@ -172,6 +172,8 @@ func FileCeption(ctx context.Context, filename string, opts []files.CopyOption) 
 		glog.Infof("%s: %d lines of files", printName, len(lines))
 	}
 
+	var list []string
+
 	for _, line := range lines {
 		line = bytes.TrimSpace(line)
 
@@ -179,8 +181,10 @@ func FileCeption(ctx context.Context, filename string, opts []files.CopyOption) 
 			continue
 		}
 
-		CatFile(ctx, string(line), opts)
+		list = append(list, string(line))
 	}
+
+	return list
 }
 
 func main() {
@@ -193,11 +197,6 @@ func main() {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
-	args := flag.Args()
-	if len(args)+len(Flags.Files) < 1 {
-		args = append(args, "-")
-	}
 
 	if Flags.Quiet {
 		stderr = nil
@@ -284,20 +283,26 @@ func main() {
 		}()
 	}
 
+	filenames := flag.Args()
+
 	if len(Flags.Files) > 0 {
 		for _, file := range Flags.Files {
-			FileCeption(ctx, file, opts)
+			filenames = append(filenames, FileCeption(ctx, file)...)
 		}
 	}
 
+	if len(filenames) < 1 {
+		filenames = append(filenames, "-")
+	}
+
 	if Flags.List {
-		for _, arg := range args {
-			ListFile(ctx, arg)
+		for _, filename := range filenames {
+			ListFile(ctx, filename)
 		}
 		return
 	}
 
-	for _, arg := range args {
-		CatFile(ctx, arg, opts)
+	for _, filename := range filenames {
+		CatFile(ctx, filename, opts)
 	}
 }
