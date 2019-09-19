@@ -36,6 +36,18 @@ var Flags struct {
 	Quiet  bool   `flag:",short=q"            desc:"If set, supresses output from subprocesses."`
 	List   bool   `flag:"list"                desc:"If set, list files instead of catting them."`
 
+	ShowAll         bool `flag:",short=A"  desc:"equivalent to -vET"`
+	NumberNonblank  bool `flag:",short=b"  desc:"number nonempty output lines, overrides -n"`
+	ShowEnds        bool `flag:",short=E"  desc:"display $ at end of each line"`
+	Number          bool `flag:",short=n"  desc:"number all output lines"`
+	SqueezeBlank    bool `flag:",short=s"  desc:"suppress repeated empty output lines"`
+	ShowTabs        bool `flag:",short=T"  desc:"display TAB characters as ^I"`
+	ShowNonprinting bool `flag:",short=v"  desc:"use ^ and M- notation, except for LFD and TAB"`
+
+	ShowAllButTabs bool `flag:"e" desc:"equivalent to -vE"`
+	ShowAllButEnds bool `flag:"t" desc:"equivalent to -vT"`
+	Ignored        bool `flag:"u" desc:"(ignored)"`
+
 	UserAgent string `flag:",default=allcat/1.0" desc:"Which User-Agent string to use"`
 
 	Metrics        bool   `desc:"If set, publish metrics to the given metrics-port or metrics-address."`
@@ -195,6 +207,19 @@ func main() {
 
 	ctx = httpfiles.WithUserAgent(ctx, Flags.UserAgent)
 
+	switch {
+	case Flags.ShowAll: // equivalent to -vET
+		Flags.ShowEnds = true
+		Flags.ShowTabs = true
+		Flags.ShowNonprinting = true
+	case Flags.ShowAllButTabs: // equivlanet to -vE
+		Flags.ShowEnds = true
+		Flags.ShowNonprinting = true
+	case Flags.ShowAllButEnds: // equivalent to -vT
+		Flags.ShowTabs = true
+		Flags.ShowNonprinting = true
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -223,6 +248,51 @@ func main() {
 			glog.Error(err)
 		}
 	}()
+
+	if Flags.ShowEnds {
+		old := out
+		out = &byteReplacer{
+			WriteCloser: old,
+			sep:         '\n',
+			with:        []byte("$\n"),
+		}
+	}
+
+	switch {
+	case Flags.NumberNonblank:
+		old := out
+		out = &nonblankLineNumberer{
+			WriteCloser: old,
+		}
+	case Flags.Number:
+		old := out
+		out = &lineNumberer{
+			WriteCloser: old,
+		}
+	}
+
+	if Flags.SqueezeBlank {
+		old := out
+		out = &blankSqueezer{
+			WriteCloser: old,
+		}
+	}
+
+	if Flags.ShowNonprinting {
+		old := out
+		out = &nonprintReplacer{
+			WriteCloser: old,
+		}
+	}
+
+	if Flags.ShowTabs {
+		old := out
+		out = &byteReplacer{
+			WriteCloser: old,
+			sep:         '\t',
+			with:        []byte("^I"),
+		}
+	}
 
 	var opts []files.CopyOption
 
