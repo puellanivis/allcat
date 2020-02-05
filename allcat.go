@@ -26,7 +26,7 @@ import (
 
 // Version information ready for build-time injection.
 var (
-	Version    = "v0.1.0"
+	Version    = "v0.0.0"
 	Buildstamp = "dev"
 )
 
