@@ -66,11 +66,11 @@ var (
 	bwRunning  = metrics.Gauge("bandwidth_running_bps", "bandwidth of the copy to output process (bytes/second)")
 )
 
-// ListFile lists the given dirname to the global out io.WriteCloser
+// ListFile lists the given dirname to the given io.Writer.
 func ListFile(ctx context.Context, out io.Writer, dirname string) {
 	fi, err := files.List(ctx, dirname)
 	if err != nil {
-		glog.Errorf("files.List: %v", err)
+		glog.Error("files.List: ", err)
 		return
 	}
 
@@ -88,22 +88,25 @@ func ListFile(ctx context.Context, out io.Writer, dirname string) {
 	tables.Empty.WriteSimple(out, t)
 }
 
-// CatFile prints the given filename out to the global out io.WriteCloser
+// CatFile prints the given filename out to the given io.Writer.
 func CatFile(ctx context.Context, out io.Writer, filename string, opts []files.CopyOption) {
-	if glog.V(10) {
-		glog.Infof("enter CatFile")
-	}
-
 	in, err := files.Open(ctx, filename)
 	if err != nil {
-		glog.Errorf("files.Open: %v", err)
+		glog.Error("files.Open: ", err)
 		return
 	}
+	defer func() {
+		if err := in.Close(); err != nil {
+			glog.Error("input.Close: ", err)
+		}
+	}()
 
 	printName := filename
-	if filename != "" && filename != "-" {
-		if printName := in.Name(); filename != printName {
-			glog.Infof("redirected: %s", printName)
+	switch filename {
+	case "", "-", "/dev/stdin":
+	default:
+		if printName = in.Name(); filename != printName {
+			glog.Info("input redirected: ", printName)
 		}
 	}
 
@@ -112,14 +115,8 @@ func CatFile(ctx context.Context, out io.Writer, filename string, opts []files.C
 	}
 
 	if glog.V(5) {
-		glog.Infof("CatFile: %s", printName)
+		glog.Info("cat file: ", printName)
 	}
-
-	defer func() {
-		if err := in.Close(); err != nil {
-			glog.Error(err)
-		}
-	}()
 
 	start := time.Now()
 
@@ -140,22 +137,25 @@ func CatFile(ctx context.Context, out io.Writer, filename string, opts []files.C
 	}
 }
 
-// FileCeption cats a list of files from a file.
-func FileCeption(ctx context.Context, filename string) []string {
-	if glog.V(10) {
-		glog.Infof("enter FileCeption")
-	}
-
+// FilelistFromFile reads a list of filenames from a file.
+func FilelistFromFile(ctx context.Context, filename string) []string {
 	in, err := files.Open(ctx, filename)
 	if err != nil {
 		glog.Errorf("files.Open: %v", err)
 		return nil
 	}
+	defer func() {
+		if err := in.Close(); err != nil {
+			glog.Error("filelist.Close: ", err)
+		}
+	}()
 
 	printName := filename
-	if filename != "" && filename != "-" {
-		if printName := in.Name(); filename != printName {
-			glog.Infof("redirected: %s", printName)
+	switch filename {
+	case "", "-", "/dev/stdin":
+	default:
+		if printName = in.Name(); filename != printName {
+			glog.Info("filelist redirected: ", printName)
 		}
 	}
 
@@ -164,7 +164,7 @@ func FileCeption(ctx context.Context, filename string) []string {
 	}
 
 	if glog.V(5) {
-		glog.Infof("FileCeption: %s", printName)
+		glog.Info("filelist: ", printName)
 	}
 
 	data, err := files.ReadFrom(in)
@@ -256,11 +256,11 @@ func main() {
 	if err != nil {
 		glog.Fatal("could not open output:", err)
 	}
-	defer func() {
+	defer func(out io.Closer) {
 		if err := out.Close(); err != nil {
-			glog.Error(err)
+			glog.Error("output.Close: ", err)
 		}
-	}()
+	}(out)
 
 	if Flags.ShowEnds {
 		old := out
@@ -325,6 +325,7 @@ func main() {
 			if err != nil {
 				glog.Fatal("net.Listen: ", err)
 			}
+			defer l.Close()
 
 			msg := fmt.Sprintf("metrics available at: http://%s/metrics", l.Addr())
 			if stderr != nil {
@@ -359,10 +360,8 @@ func main() {
 			defer cancel()
 
 			if err := srv.Shutdown(ctx); err != nil {
-				glog.Error(err)
+				glog.Error("http.Server.Shutdown: ", err)
 			}
-
-			l.Close()
 		}()
 	}
 
@@ -370,7 +369,7 @@ func main() {
 
 	if len(Flags.Files) > 0 {
 		for _, file := range Flags.Files {
-			filenames = append(filenames, FileCeption(ctx, file)...)
+			filenames = append(filenames, FilelistFromFile(ctx, file)...)
 		}
 	}
 
