@@ -66,13 +66,8 @@ var (
 	bwRunning  = metrics.Gauge("bandwidth_running_bps", "bandwidth of the copy to output process (bytes/second)")
 )
 
-var (
-	stderr = os.Stderr
-	out    io.WriteCloser
-)
-
 // ListFile lists the given dirname to the global out io.WriteCloser
-func ListFile(ctx context.Context, dirname string) {
+func ListFile(ctx context.Context, out io.Writer, dirname string) {
 	fi, err := files.List(ctx, dirname)
 	if err != nil {
 		glog.Errorf("files.List: %v", err)
@@ -94,7 +89,7 @@ func ListFile(ctx context.Context, dirname string) {
 }
 
 // CatFile prints the given filename out to the global out io.WriteCloser
-func CatFile(ctx context.Context, filename string, opts []files.CopyOption) {
+func CatFile(ctx context.Context, out io.Writer, filename string, opts []files.CopyOption) {
 	if glog.V(10) {
 		glog.Infof("enter CatFile")
 	}
@@ -199,6 +194,23 @@ func FileCeption(ctx context.Context, filename string) []string {
 	return list
 }
 
+func getOutput(ctx context.Context, filename string) (io.WriteCloser, error) {
+	out, err := files.Create(ctx, filename)
+	if err != nil {
+		return nil, err
+	}
+
+	switch filename {
+	case "", "-", "/dev/stdout":
+	default:
+		if printName := out.Name(); printName != filename {
+			glog.Info("output redirected: ", printName)
+		}
+	}
+
+	return out, nil
+}
+
 func main() {
 	flag.Set("logtostderr", "true")
 
@@ -223,6 +235,7 @@ func main() {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	stderr := os.Stderr
 	if Flags.Quiet {
 		stderr = nil
 	}
@@ -239,9 +252,9 @@ func main() {
 
 	var err error
 
-	out, err = files.Create(ctx, Flags.Output)
+	out, err := getOutput(ctx, Flags.Output)
 	if err != nil {
-		glog.Fatal(err)
+		glog.Fatal("could not open output:", err)
 	}
 	defer func() {
 		if err := out.Close(); err != nil {
@@ -367,12 +380,12 @@ func main() {
 
 	if Flags.List {
 		for _, filename := range filenames {
-			ListFile(ctx, filename)
+			ListFile(ctx, out, filename)
 		}
 		return
 	}
 
 	for _, filename := range filenames {
-		CatFile(ctx, filename, opts)
+		CatFile(ctx, out, filename, opts)
 	}
 }
