@@ -32,23 +32,25 @@ var (
 
 // Flags contains all of the flags defined for the application.
 var Flags struct {
-	Output string `flag:",short=o"            desc:"Specifies which file to write the output to"`
-	Quiet  bool   `flag:",short=q"            desc:"If set, supresses output from subprocesses."`
-	List   bool   `flag:"list"                desc:"If set, list files instead of catting them."`
+	Output string `flag:",short=o" desc:"Specifies which URI to write the output to."`
+	Quiet  bool   `flag:",short=q" desc:"If set, supresses output from subprocesses."`
 
-	ShowAll         bool `flag:",short=A"  desc:"equivalent to -vET"`
-	NumberNonblank  bool `flag:",short=b"  desc:"number nonempty output lines, overrides -n"`
-	ShowEnds        bool `flag:",short=E"  desc:"display $ at end of each line"`
-	Number          bool `flag:",short=n"  desc:"number all output lines"`
-	SqueezeBlank    bool `flag:",short=s"  desc:"suppress repeated empty output lines"`
-	ShowTabs        bool `flag:",short=T"  desc:"display TAB characters as ^I"`
-	ShowNonprinting bool `flag:",short=v"  desc:"use ^ and M- notation, except for LFD and TAB"`
+	List       bool   `                           desc:"If set, list files instead of catting them."`
+	UserAgent  string `flag:",default=allcat/1.1" desc:"Which User-Agent string to use."`
+	BufferSize uint   `                           desc:"This is the copy buffer size."`
+	PacketSize uint   `                           desc:"If set, the copy buffer size will be a multiple of this."`
+
+	ShowAll         bool `flag:",short=A" desc:"equivalent to -vET"`
+	NumberNonblank  bool `flag:",short=b" desc:"number nonempty output lines, overrides -n"`
+	ShowEnds        bool `flag:",short=E" desc:"display $ at end of each line"`
+	Number          bool `flag:",short=n" desc:"number all output lines"`
+	SqueezeBlank    bool `flag:",short=s" desc:"suppress repeated empty output lines"`
+	ShowTabs        bool `flag:",short=T" desc:"display TAB characters as ^I"`
+	ShowNonprinting bool `flag:",short=v" desc:"use ^ and M- notation, except for LFD and TAB"`
 
 	ShowAllButTabs bool `flag:"e" desc:"equivalent to -vE"`
 	ShowAllButEnds bool `flag:"t" desc:"equivalent to -vT"`
 	Ignored        bool `flag:"u" desc:"(ignored)"`
-
-	UserAgent string `flag:",default=allcat/1.0" desc:"Which User-Agent string to use"`
 
 	Metrics        bool   `desc:"If set, publish metrics to the given metrics-port or metrics-address."`
 	MetricsPort    int    `desc:"Which port to publish metrics with. (default auto-assign)"`
@@ -308,6 +310,20 @@ func main() {
 	}
 
 	var opts []files.CopyOption
+
+	bufferSize := Flags.BufferSize
+
+	if Flags.PacketSize > 0 {
+		bufferSize -= bufferSize % Flags.PacketSize
+		if bufferSize <= 0 {
+			bufferSize = Flags.PacketSize
+		}
+	}
+
+	if bufferSize := int(bufferSize); bufferSize > 0 {
+		opts = append(opts, files.WithBufferSize(bufferSize))
+		glog.V(2).Info("using copy buffer size: ", bufferSize)
+	}
 
 	if Flags.Metrics {
 		opts = append(opts,
