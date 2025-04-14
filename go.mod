@@ -1,7 +1,6 @@
 module github.com/puellanivis/allcat
 
 go 1.21
-toolchain go1.24.1
 
 require github.com/puellanivis/breton v0.2.16
 
